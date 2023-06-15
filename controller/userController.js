@@ -4,8 +4,6 @@ const axios = require("axios");
 const config = require("config");
 const User = require("../models/user");
 
-
-
 const signupController = async (req, res) => {
   if (req.body.googleAccessToken) {
     const { googleAccessToken } = req.body;
@@ -94,8 +92,76 @@ const signupController = async (req, res) => {
   }
 };
 
-const signinController =async(req,res)=>{}
+const signinController = async (req, res) => {
+  if (req.body.googleAccessToken) {
+    // gogole-auth
+    const { googleAccessToken } = req.body;
 
+    axios
+      .get("https://www.googleapis.com/oauth2/v3/userinfo", {
+        headers: {
+          Authorization: `Bearer ${googleAccessToken}`,
+        },
+      })
+      .then(async (response) => {
+        const firstName = response.data.given_name;
+        const lastName = response.data.family_name;
+        const email = response.data.email;
+        const picture = response.data.picture;
+
+        const existingUser = await User.findOne({ email });
+
+        if (!existingUser)
+          return res.status(404).json({ message: "User don't exist!" });
+
+        const token = jwt.sign(
+          {
+            email: existingUser.email,
+            id: existingUser._id,
+          },
+          config.get("JWT_SECRET"),
+          { expiresIn: "1h" }
+        );
+
+        res.status(200).json({ result: existingUser, token });
+      })
+      .catch((err) => {
+        res.status(400).json({ message: "Invalid access token!" });
+      });
+  } else {
+    // normal-auth
+    const { email, password } = req.body;
+    if (email === "" || password === "")
+      return res.status(400).json({ message: "Invalid field!" });
+    try {
+      const existingUser = await User.findOne({ email });
+
+      if (!existingUser)
+        return res.status(404).json({ message: "User don't exist!" });
+
+      const isPasswordOk = await bcrypt.compare(
+        password,
+        existingUser.password
+      );
+
+      if (!isPasswordOk)
+        return res.status(400).json({ message: "Invalid credintials!" });
+
+      const token = jwt.sign(
+        {
+          email: existingUser.email,
+          id: existingUser._id,
+        },
+        config.get("JWT_SECRET"),
+        { expiresIn: "1h" }
+      );
+
+      res.status(200).json({ result: existingUser, token });
+    } catch (err) {
+      res.status(500).json({ message: "Something went wrong!" });
+    }
+  }
+};
 module.exports = {
   signinController,
   signupController,
